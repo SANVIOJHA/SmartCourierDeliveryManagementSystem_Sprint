@@ -1,0 +1,20 @@
+FROM maven:3.9.9-eclipse-temurin-17 AS builder
+
+ARG MODULE_DIR
+WORKDIR /workspace
+
+COPY ${MODULE_DIR}/ ${MODULE_DIR}/
+
+WORKDIR /workspace/${MODULE_DIR}
+RUN chmod +x mvnw && ./mvnw -q -DskipTests package
+RUN sh -c 'find target -maxdepth 1 -name "*.jar" ! -name "*original*" | head -n 1 | xargs -I{} cp "{}" /workspace/app.jar'
+
+FROM eclipse-temurin:17-jre-jammy
+
+ENV JAVA_OPTS="-Xms128m -Xmx384m -XX:+UseSerialGC"
+WORKDIR /app
+
+COPY --from=builder /workspace/app.jar /app/app.jar
+
+EXPOSE 8080
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/app.jar"]

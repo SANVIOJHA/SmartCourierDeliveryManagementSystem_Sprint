@@ -1,0 +1,233 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: smartcourier-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: tiger
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./docker/mysql/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -ptiger --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 700m
+    cpus: 1.0
+
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: smartcourier-rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+    mem_limit: 350m
+    cpus: 0.75
+
+  zipkin:
+    image: openzipkin/zipkin:3
+    container_name: smartcourier-zipkin
+    restart: unless-stopped
+    ports:
+      - "9411:9411"
+    mem_limit: 300m
+    cpus: 0.50
+
+  eureka-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: eureka-server
+    container_name: smartcourier-eureka
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8761
+      JAVA_OPTS: -Xms128m -Xmx320m -XX:+UseSerialGC
+    ports:
+      - "8761:8761"
+    mem_limit: 450m
+    cpus: 0.75
+
+  config-server:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: config-server
+    container_name: smartcourier-config
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8888
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      JAVA_OPTS: -Xms128m -Xmx320m -XX:+UseSerialGC
+    ports:
+      - "8888:8888"
+    depends_on:
+      eureka-server:
+        condition: service_started
+    mem_limit: 450m
+    cpus: 0.75
+
+  auth-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: auth-service
+    container_name: smartcourier-auth
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8081
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/smartcourier_auth_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: tiger
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+      JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseSerialGC
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+      zipkin:
+        condition: service_started
+    mem_limit: 550m
+    cpus: 0.90
+
+  delivery-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: delivery-service
+    container_name: smartcourier-delivery
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8082
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/smartcourier_delivery_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: tiger
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+      JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseSerialGC
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+      zipkin:
+        condition: service_started
+    mem_limit: 550m
+    cpus: 0.90
+
+  tracking-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: tracking-service
+    container_name: smartcourier-tracking
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8083
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/smartcourier_tracking_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: tiger
+      SPRING_RABBITMQ_HOST: rabbitmq
+      SPRING_RABBITMQ_PORT: 5672
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+      JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseSerialGC
+    depends_on:
+      mysql:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+      zipkin:
+        condition: service_started
+    mem_limit: 550m
+    cpus: 0.90
+
+  admin-service:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: admin-service
+    container_name: smartcourier-admin
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8084
+      SPRING_DATASOURCE_URL: jdbc:mysql://mysql:3306/smartcourier_admin_db
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_DATASOURCE_PASSWORD: tiger
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+      JAVA_OPTS: -Xms128m -Xmx384m -XX:+UseSerialGC
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+      zipkin:
+        condition: service_started
+    mem_limit: 550m
+    cpus: 0.90
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.service
+      args:
+        MODULE_DIR: api-gateway
+    container_name: smartcourier-gateway
+    restart: unless-stopped
+    environment:
+      SERVER_PORT: 8080
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: http://eureka-server:8761/eureka
+      MANAGEMENT_ZIPKIN_TRACING_ENDPOINT: http://zipkin:9411/api/v2/spans
+      JAVA_OPTS: -Xms128m -Xmx320m -XX:+UseSerialGC
+    ports:
+      - "8080:8080"
+    depends_on:
+      eureka-server:
+        condition: service_started
+      config-server:
+        condition: service_started
+      auth-service:
+        condition: service_started
+      delivery-service:
+        condition: service_started
+      tracking-service:
+        condition: service_started
+      admin-service:
+        condition: service_started
+      zipkin:
+        condition: service_started
+    mem_limit: 450m
+    cpus: 0.75
+
+volumes:
+  mysql_data:
